@@ -1,0 +1,10 @@
+# This file contains values from Cookiecutter
+
+default_context:
+  project_name: "baby-crawler"
+  project_description: "A primitive async website crawler."
+  organization: "weiss-d"
+  license: "MIT"
+  version: "0.1.0"
+  github_name: "weiss-d"
+  email: "wonder@simonweiss.space"
