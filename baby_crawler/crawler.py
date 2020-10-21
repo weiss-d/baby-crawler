@@ -8,12 +8,14 @@ class Crawler:
 
     def __init__(self,
             root_url:str,
+            splash_address: str,
             allow_subdomains: bool = True,
             concurrency: int = 5,
             max_sleep_interval: float = 10.0
             ) -> None:
         self.root_url = root_url
         self._root_url_base = urllib.parse.urlsplit(root_url)[1]
+        self.splash_address = splash_address
 
         self.allow_subdomains = allow_subdomains
 
