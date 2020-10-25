@@ -41,6 +41,7 @@ networkx = "^2.5"
 gazpacho = "^1.1"
 networkx_viewer = "^0.3.0"
 numpy = "^1.19.2"
+matplotlib = "^3.3.2"
 
 [tool.poetry.dev-dependencies]
 darglint = "^1.5.4"
@@ -56,6 +57,7 @@ pydocstyle = "^5.0.2"
 pre-commit = "^2.7.1"
 pytest-asyncio = "^0.14.0"
 asynctest = "^0.13.0"
+ipdb = "^0.13.4"
 
 [tool.black]
 # https://github.com/psf/black
