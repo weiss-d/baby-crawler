@@ -16,6 +16,7 @@ def checkup_html() -> str:
   <a href="https://google.com/2.html">Normal link 2</a>
   <a href="https://google.com/2.html">Duplicate link 2</a>
   <a href="https://google.com/3.html#test">Normal link 3 with anchor</a>
+  <a href="https://google.com/picture.png">Link to an image.</a>
   <a href="https://mail.google.com/">Subdomain link</a>
   <a href="/4.html">Relative link</a>
   <a rel="nofollow" href="https://google.com/nofollow">Nofollow link</a>
