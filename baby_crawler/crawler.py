@@ -1,25 +1,66 @@
-from typing import Set, Tuple
+from typing import Set, Tuple, Union
 
 import asyncio
 import urllib.parse
 
 import aiohttp
 import gazpacho
+import ipdb
 import networkx
 
-from .setqueue import SetQueue
+from .crawlerqueue import CrawlerQueue
 
 
 class Crawler:
+    """Class that performs crawling and gathers data into Networkx graph.
+
+    Instantiate it, then run make_site_map() to crawl the site.
+    After that you will have access to the data in form of Networkx graph.
+    """
+
     def __init__(
         self,
         start_url: str,
         splash_address: str,
         allow_subdomains: bool = True,
+        allow_queries: bool = False,
+        depth_by_url: Union[int, None] = None,
+        depth_by_desc: Union[int, None] = None,
         concurrency: int = 5,
-        max_sleep_interval: float = 10.0,
+        max_pause: float = 10.0,
     ) -> None:
-        self.start_url = start_url
+        """__init__.
+
+        Parameters
+        ----------
+        start_url : str
+            Typically a website address, like "https://google.com".
+            Must contain protocol prefix i.e. "http://" or "https://".
+        splash_address : str
+            Address of Splash renderer instance.
+        allow_subdomains : bool
+            Allow indexing subdomains like "https://mail.google.com"
+        allow_queries: bool
+            Allow indexing URLs containing queries i.e. something after '?' sign.
+        depth_by_url : Union[int, None]
+            Limit crawling depth by number of URL path segments.
+            I.e. 3: "http://site.com/part1/part2/part3".
+            Unlimited if not specified.
+        depth_by_desc : Union[int, None]
+            Limit crawling depth by number of descendant pages.
+            I.e. 3: "http://site.com/part1/part2/part3".
+            Unlimited if not specified.
+        concurrency : int
+            Maximum ammount of concurrent requests.
+        max_pause : float
+            Maximum pause between requests made by one of concurrent tasks.
+
+        Returns
+        -------
+        None
+
+        """
+        self.start_url = start_url.strip("/")
         self.root_url = urllib.parse.urlsplit(start_url)[1]
         self.splash_address = urllib.parse.urljoin(
             splash_address, "render.html?timeout=10&wait=0.5&url="
@@ -27,12 +68,14 @@ class Crawler:
 
         self.allow_subdomains = allow_subdomains
         self.concurrency = concurrency
-        self.max_sleep_interval = max_sleep_interval
+        self.max_pause = max_pause
 
         self.site_graph = networkx.DiGraph()
+        self.site_graph.add_node(0, url=self.start_url)
+
         self.crawled_links = set()
 
-    ### Blocking stuff
+    ### Blocking functions
 
     def _has_root_url(self, url: str) -> bool:
         url_base = urllib.parse.urlsplit(url)[1]
@@ -84,21 +127,71 @@ class Crawler:
 
         return (title.text if title else "", valid_links)
 
-    ### Async stuff
+    def _add_edge(self, node_id: int, node_url: str, parent_id: int) -> None:
+        """Add and edge to the site graph.
+
+        Parameters
+        ----------
+        node_id : int
+            Unique ID given by CrawlerQueue.
+        node_url : str
+            URL of the page represented by this node.
+        parent_id : int
+            Parent page ID, i.e. the page in which the node URL was found.
+
+        Returns
+        -------
+        None
+
+        """
+        self.site_graph.add_node(node_id, url=node_url)
+        self.site_graph.add_edge(parent_id, node_id)
+
+    ### Async funtions
 
     async def fetch_page(self, url: str) -> str:
+        """Asyncronously fetch a page from given URL using aiohttp and Splash HTTP API.
+
+        Parameters
+        ----------
+        url : str
+            Absolute page link.
+
+        Returns
+        -------
+        str
+
+        """
         async with aiohttp.ClientSession() as session:
             print("Requesting from Splash:", self.splash_address + url)
             async with session.get(self.splash_address + url) as response:
                 page_data = await response.read()
                 return page_data.decode()
 
-    async def process_links(self, number: int, queue: asyncio.Queue) -> None:
+    async def process_links(
+        self, worker_number: int, queue: asyncio.Queue
+    ) -> None:
+        """Function from which concurrent workers for processing links are made.
+
+        Parameters
+        ----------
+        worker_number : int
+            Task number for logging.
+        queue : asyncio.Queue
+            CrawlerQueue to take items for processing from.
+
+        Returns
+        -------
+        None
+
+        """
         while True:
-            page_link = await queue.get()
+            page_id, page_link, parent_id = await queue.get()
             if not page_link in self.crawled_links:
+                self._add_edge(page_id, page_link, parent_id)
                 self.crawled_links.add(page_link)
-                print(f"Task number {number} is processing {page_link}")
+                # ipdb.set_trace()
+                print(f"Task worker_number {number} is processing {page_link}")
                 page_html = await self.fetch_page(page_link)
                 page_data = self.get_page_data(page_html)
                 print(f"{len(page_data[1])} links found.")
@@ -106,13 +199,19 @@ class Crawler:
                 for link in page_data[1]:
                     link = self._normalize_link(page_link, link)
                     if not link in self.crawled_links:
-                        self.site_graph.add_edge(page_link, link)
-                        await queue.put(link)
+                        await queue.put((link, page_id))
             queue.task_done()
 
     async def run_crawler(self) -> None:
-        queue = SetQueue()
-        queue.put_nowait(self.start_url)
+        """Asyncronous function to initiate concurrent site crawling.
+
+        Returns
+        -------
+        None
+
+        """
+        queue = CrawlerQueue()
+        queue.put_nowait((self.start_url, 0))
         workers = [
             asyncio.create_task(self.process_links(i, queue))
             for i in range(self.concurrency)
@@ -123,6 +222,13 @@ class Crawler:
         await asyncio.gather(*workers, return_exceptions=True)
 
     ### Main Runner
-    def make_site_map(self):
+    def make_site_map(self) -> None:
+        """Sycncronous function to make the site map using async run_crawler().
+
+        Returns
+        -------
+        None
+
+        """
         asyncio.run(self.run_crawler())
         print("Site map building done!")
