@@ -1,14 +1,16 @@
 from typing import Set, Tuple, Union
 
 import asyncio
+import json
 import urllib.parse
+from collections import defaultdict
 
 import aiohttp
 import gazpacho
-import ipdb
 import networkx
 
 from .crawlerqueue import CrawlerQueue
+from .exceptions import FetchError
 
 
 class Crawler:
@@ -74,6 +76,8 @@ class Crawler:
         self.site_graph.add_node(0, url=self.start_url)
 
         self.crawled_links = set()
+
+        self.error_count = defaultdict(int)
 
     ### Blocking functions
 
@@ -155,18 +159,37 @@ class Crawler:
         Parameters
         ----------
         url : str
-            Absolute page link.
+            Absolute page URL.
 
         Returns
         -------
         str
+            String of fetched page HTML.
+
+        Raises
+        ------
+        FetchError
+            Raised on every error associated with HTTP errors or exceeded timeouts.
+            Attribute 'error_type' contains 'Splash Timeout', 'Splash Unreachable'
+            or HTTP error code, while 'message' contains original error message by aiohttp.
 
         """
         async with aiohttp.ClientSession() as session:
             print("Requesting from Splash:", self.splash_address + url)
-            async with session.get(self.splash_address + url) as response:
-                page_data = await response.read()
-                return page_data.decode()
+            try:
+                async with session.get(self.splash_address + url) as response:
+                    response.raise_for_status()
+                    page_data = await response.read()
+                    return page_data.decode()
+            except aiohttp.client_exceptions.ClientConnectorError:
+                print("Splash instance is unreachable.")
+                raise FetchError("Splash Unreachable", "Splash unreachable.")
+            #  except aiohttp.ClientConnectionError:
+            #      raise
+            except asyncio.TimeoutError:
+                raise FetchError("Splash Timeout", "Splash timeout.")
+            except aiohttp.ClientResponseError as e:
+                raise FetchError(str(e.status), e.message)
 
     async def process_links(
         self, worker_number: int, queue: asyncio.Queue
@@ -188,18 +211,23 @@ class Crawler:
         while True:
             page_id, page_link, parent_id = await queue.get()
             if not page_link in self.crawled_links:
-                self._add_edge(page_id, page_link, parent_id)
-                self.crawled_links.add(page_link)
-                # ipdb.set_trace()
-                print(f"Task worker_number {number} is processing {page_link}")
-                page_html = await self.fetch_page(page_link)
-                page_data = self.get_page_data(page_html)
-                print(f"{len(page_data[1])} links found.")
+                try:
+                    self._add_edge(page_id, page_link, parent_id)
+                    self.crawled_links.add(page_link)
+                    print(
+                        f"Task worker_number {worker_number} is processing {page_link}"
+                    )
+                    page_html = await self.fetch_page(page_link)
+                    page_data = self.get_page_data(page_html)
+                    print(f"{len(page_data[1])} links found.")
 
-                for link in page_data[1]:
-                    link = self._normalize_link(page_link, link)
-                    if not link in self.crawled_links:
-                        await queue.put((link, page_id))
+                    for link in page_data[1]:
+                        link = self._normalize_link(page_link, link)
+                        if not link in self.crawled_links:
+                            await queue.put((link, page_id))
+                except FetchError as e:
+                    self.error_count[e.error_type] += 1
+                    # TODO add logging for page url, or adding info to graph
             queue.task_done()
 
     async def run_crawler(self) -> None:
