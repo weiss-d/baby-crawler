@@ -134,7 +134,9 @@ class Crawler:
 
         return (title.text if title else "", valid_links)
 
-    def _add_edge(self, node_id: int, node_url: str, parent_id: int) -> None:
+    def _add_graph_edge(
+        self, node_id: int, node_url: str, parent_id: int
+    ) -> None:
         """Add and edge to the site graph.
 
         Parameters
@@ -194,7 +196,7 @@ class Crawler:
             except aiohttp.ClientResponseError as e:
                 raise FetchError(str(e.status), e.message)
 
-    async def process_links(
+    async def _process_links(
         self,
         queue,
         page_id: int,
@@ -224,7 +226,7 @@ class Crawler:
 
         """
         try:
-            self._add_edge(page_id, page_link, parent_id)
+            self._add_graph_edge(page_id, page_link, parent_id)
             self.crawled_links.add(page_link)
 
             page_html = await self.fetch_page(page_link)
@@ -241,7 +243,7 @@ class Crawler:
             self.error_count[e.error_type] += 1
             # TODO add logging for page url, or adding info to graph
 
-    async def link_worker(
+    async def _link_worker(
         self, worker_number: int, queue: asyncio.Queue
     ) -> None:
         """Function from which concurrent workers for processing links are made.
@@ -264,12 +266,12 @@ class Crawler:
                 print(
                     f"Task worker_number {worker_number} is processing {page_link}"
                 )
-                await self.process_links(
+                await self._process_links(
                     queue, page_id, page_link, parent_id, desc_level
                 )
             queue.task_done()
 
-    async def run_crawler(self) -> None:
+    async def _run_crawler(self) -> None:
         """Asyncronous function to initiate concurrent site crawling.
 
         Returns
@@ -280,7 +282,7 @@ class Crawler:
         queue = CrawlerQueue()
         queue.put_nowait((self.start_url, 0, 0))
         workers = [
-            asyncio.create_task(self.link_worker(i, queue))
+            asyncio.create_task(self._link_worker(i, queue))
             for i in range(self.concurrency)
         ]
         await queue.join()
@@ -297,5 +299,5 @@ class Crawler:
         None
 
         """
-        asyncio.run(self.run_crawler())
+        asyncio.run(self._run_crawler())
         print("Site map building done!")
