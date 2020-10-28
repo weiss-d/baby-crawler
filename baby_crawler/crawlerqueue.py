@@ -1,18 +1,15 @@
-"""Asycnio queue, that stores all tasks ever added assigning unique ID to each task.
-
-Combined with popular solution for multitask crawling from
-https://stackoverflow.com/questions/1581895/how-check-if-a-task-is-already-in-python-queue
-"""
 from typing import Tuple
 
 from asyncio import Queue
 
 
 class CrawlerQueue(Queue):
+    """
+    Asycnio queue, that assigns unique ID to each task using simple counter.
+    """
+
     def _init(self, maxsize: int) -> None:
         Queue._init(self, maxsize)
-
-        self.all_urls = set()
         self.items_added = 0
 
     def _put(self, item: Tuple[str, int]) -> None:
@@ -28,7 +25,5 @@ class CrawlerQueue(Queue):
         None
 
         """
-        if not item[0] in self.all_urls:
-            self.items_added += 1
-            Queue._put(self, (self.items_added, *item))
-            self.all_urls.add(item[0])
+        self.items_added += 1
+        Queue._put(self, (self.items_added, *item))

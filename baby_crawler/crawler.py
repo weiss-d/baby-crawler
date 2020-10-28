@@ -1,6 +1,3 @@
-import ipdb
-
-
 from typing import Set, Tuple, Union
 
 import asyncio
@@ -10,6 +7,7 @@ from collections import defaultdict
 
 import aiohttp
 import gazpacho
+import ipdb
 import networkx
 
 from .crawlerqueue import CrawlerQueue
@@ -197,6 +195,53 @@ class Crawler:
                 raise FetchError(str(e.status), e.message)
 
     async def process_links(
+        self,
+        queue,
+        page_id: int,
+        page_link: str,
+        parent_id: int,
+        desc_level: int,
+    ) -> None:
+        """Adds a page to site map graph and then processes all the links found on this page.
+        Adds found links to the queue if they are not yet been crawled.
+
+        Parameters
+        ----------
+        queue : asyncio.Queue
+            CrawlerQueue to take items for processing from.
+        page_id : int
+            Unique page ID from queue.
+        page_link : str
+            Page URL.
+        parent_id : int
+            Unique ID of a page, where current page URL was found.
+        desc_level : int
+            Descendance level of page, from queue.
+
+        Returns
+        -------
+        None
+
+        """
+        try:
+            self._add_edge(page_id, page_link, parent_id)
+            self.crawled_links.add(page_link)
+
+            page_html = await self.fetch_page(page_link)
+            # ipdb.set_trace()
+            if desc_level < self.depth_by_desc:
+                page_data = self.get_page_data(page_html)
+                print(f"{len(page_data[1])} links found.")
+
+                for link in page_data[1]:
+                    link = self._normalize_link(page_link, link)
+                    if not link in self.crawled_links:
+                        await queue.put((link, page_id, desc_level + 1))
+        except FetchError as e:
+            self.error_count[e.error_type] += 1
+            # TODO add logging for page url, or adding info to graph
+
+    async def link_worker(
         self, worker_number: int, queue: asyncio.Queue
     ) -> None:
         """Function from which concurrent workers for processing links are made.
@@ -216,25 +261,12 @@ class Crawler:
         while True:
             page_id, page_link, parent_id, desc_level = await queue.get()
             if not page_link in self.crawled_links:
-                try:
-                    self._add_edge(page_id, page_link, parent_id)
-                    self.crawled_links.add(page_link)
-
-                    print(
-                        f"Task worker_number {worker_number} is processing {page_link}"
-                    )
-                    page_html = await self.fetch_page(page_link)
-                    #ipdb.set_trace()
-                    if desc_level < self.depth_by_desc:
-                        page_data = self.get_page_data(page_html)
-                        print(f"{len(page_data[1])} links found.")
-
-                        for link in page_data[1]:
-                            link = self._normalize_link(page_link, link)
-                            await queue.put((link, page_id, desc_level + 1))
-                except FetchError as e:
-                    self.error_count[e.error_type] += 1
-                    # TODO add logging for page url, or adding info to graph
+                print(
+                    f"Task worker_number {worker_number} is processing {page_link}"
+                )
+                await self.process_links(
+                    queue, page_id, page_link, parent_id, desc_level
+                )
             queue.task_done()
 
     async def run_crawler(self) -> None:
@@ -248,7 +280,7 @@ class Crawler:
         queue = CrawlerQueue()
         queue.put_nowait((self.start_url, 0, 0))
         workers = [
-            asyncio.create_task(self.process_links(i, queue))
+            asyncio.create_task(self.link_worker(i, queue))
             for i in range(self.concurrency)
         ]
         await queue.join()
