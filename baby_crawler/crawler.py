@@ -1,3 +1,6 @@
+import ipdb
+
+
 from typing import Set, Tuple, Union
 
 import asyncio
@@ -69,6 +72,8 @@ class Crawler:
         )
 
         self.allow_subdomains = allow_subdomains
+        self.depth_by_desc = depth_by_desc
+
         self.concurrency = concurrency
         self.max_pause = max_pause
 
@@ -184,8 +189,8 @@ class Crawler:
             except aiohttp.client_exceptions.ClientConnectorError:
                 print("Splash instance is unreachable.")
                 raise FetchError("Splash Unreachable", "Splash unreachable.")
-            #  except aiohttp.ClientConnectionError:
-            #      raise
+            except aiohttp.ClientConnectionError as e:
+                raise FetchError(str(e.status), e.message)
             except asyncio.TimeoutError:
                 raise FetchError("Splash Timeout", "Splash timeout.")
             except aiohttp.ClientResponseError as e:
@@ -209,22 +214,24 @@ class Crawler:
 
         """
         while True:
-            page_id, page_link, parent_id = await queue.get()
+            page_id, page_link, parent_id, desc_level = await queue.get()
             if not page_link in self.crawled_links:
                 try:
                     self._add_edge(page_id, page_link, parent_id)
                     self.crawled_links.add(page_link)
+
                     print(
                         f"Task worker_number {worker_number} is processing {page_link}"
                     )
                     page_html = await self.fetch_page(page_link)
-                    page_data = self.get_page_data(page_html)
-                    print(f"{len(page_data[1])} links found.")
+                    #ipdb.set_trace()
+                    if desc_level < self.depth_by_desc:
+                        page_data = self.get_page_data(page_html)
+                        print(f"{len(page_data[1])} links found.")
 
-                    for link in page_data[1]:
-                        link = self._normalize_link(page_link, link)
-                        if not link in self.crawled_links:
-                            await queue.put((link, page_id))
+                        for link in page_data[1]:
+                            link = self._normalize_link(page_link, link)
+                            await queue.put((link, page_id, desc_level + 1))
                 except FetchError as e:
                     self.error_count[e.error_type] += 1
                     # TODO add logging for page url, or adding info to graph
@@ -239,7 +246,7 @@ class Crawler:
 
         """
         queue = CrawlerQueue()
-        queue.put_nowait((self.start_url, 0))
+        queue.put_nowait((self.start_url, 0, 0))
         workers = [
             asyncio.create_task(self.process_links(i, queue))
             for i in range(self.concurrency)

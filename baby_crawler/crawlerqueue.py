@@ -12,7 +12,7 @@ class CrawlerQueue(Queue):
     def _init(self, maxsize: int) -> None:
         Queue._init(self, maxsize)
 
-        self.all_items = set()
+        self.all_urls = set()
         self.items_added = 0
 
     def _put(self, item: Tuple[str, int]) -> None:
@@ -21,14 +21,14 @@ class CrawlerQueue(Queue):
         Parameters
         ----------
         item : Tuple[str, int]
-            Tuple containing page URL and page parent unique ID.
+            Tuple containing page URL, page parent unique ID and descendance level.
 
         Returns
         -------
         None
 
         """
-        if not item in self.all_items:
+        if not item[0] in self.all_urls:
             self.items_added += 1
             Queue._put(self, (self.items_added, *item))
-            self.all_items.add(item)
+            self.all_urls.add(item[0])
