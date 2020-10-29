@@ -1,0 +1,80 @@
+"""
+Internal configuration for Crawler class and Splash.
+
+For performance tweaks.
+"""
+
+
+splash_timeout = "10"
+splash_wait = "0.5"
+splash_params = ""
+
+max_url_length = 500
+
+unwanded_file_exts = {
+    "css",
+    "js",
+    "bmp",
+    "gif",
+    "jpg",
+    "jpeg",
+    "ico",
+    "png",
+    "tif",
+    "tiff",
+    "mid",
+    "mp2",
+    "mp3",
+    "mp4",
+    "wav",
+    "avi",
+    "mov",
+    "mpeg",
+    "ram",
+    "m4v",
+    "mkv",
+    "ogg",
+    "ogv",
+    "pdf",
+    "ps",
+    "eps",
+    "tex",
+    "ppt",
+    "pptx",
+    "doc",
+    "docx",
+    "xls",
+    "xlsx",
+    "names",
+    "data",
+    "dat",
+    "exe",
+    "bz2",
+    "tar",
+    "msi",
+    "bin",
+    "7z",
+    "psd",
+    "dmg",
+    "iso",
+    "epub",
+    "dll",
+    "cnf",
+    "tgz",
+    "sha1",
+    "thmx",
+    "mso",
+    "arff",
+    "rtf",
+    "jar",
+    "csv",
+    "rm",
+    "smil",
+    "wmv",
+    "swf",
+    "wma",
+    "zip",
+    "rar",
+    "gz",
+    "pdf",
+}

@@ -389,6 +389,14 @@ testing = ["Django (<3.1)", "colorama", "docopt", "pytest (>=3.9.0,<5.0.0)"]
 
 [[package]]
 category = "main"
+description = "a library for doing approximate and phonetic matching of strings."
+name = "jellyfish"
+optional = false
+python-versions = ">3.4"
+version = "0.8.2"
+
+[[package]]
+category = "main"
 description = "A fast implementation of the Cassowary constraint solver"
 name = "kiwisolver"
 optional = false
@@ -932,7 +940,7 @@ docs = ["sphinx", "jaraco.packaging (>=3.2)", "rst.linker (>=1.9)"]
 testing = ["pytest (>=3.5,<3.7.3 || >3.7.3)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pytest-cov", "jaraco.test (>=3.2.0)", "jaraco.itertools", "func-timeout", "pytest-black (>=0.3.7)", "pytest-mypy"]
 
 [metadata]
-content-hash = "aaf11db9debf8a7f593c7209db5022eb75511df2b9ee88c01ca3659801e1a273"
+content-hash = "054fbbe592c30b9f479f76436a5a16fe428d560fa273dbdb2d93516b3aa7ff90"
 lock-version = "1.1"
 python-versions = "^3.7"
 
@@ -1082,6 +1090,13 @@ isort = [
 jedi = [
     {file = "jedi-0.17.2-py2.py3-none-any.whl", hash = "sha256:98cc583fa0f2f8304968199b01b6b4b94f469a1f4a74c1560506ca2a211378b5"},
     {file = "jedi-0.17.2.tar.gz", hash = "sha256:86ed7d9b750603e4ba582ea8edc678657fb4007894a12bcf6f4bb97892f31d20"},
+]
+jellyfish = [
+    {file = "jellyfish-0.8.2-cp35-cp35m-manylinux2014_x86_64.whl", hash = "sha256:f5c7fd1b02edf86135ed005ba8715ed9496d268e3d77e6428445689a441c4c64"},
+    {file = "jellyfish-0.8.2-cp36-cp36m-manylinux2014_x86_64.whl", hash = "sha256:2490726dda6603fad0090f7afa2b33718ac03011b6807658b8cdbf512a798e89"},
+    {file = "jellyfish-0.8.2-cp37-cp37m-manylinux2014_x86_64.whl", hash = "sha256:4213dda17b75e09b4a5bac48b7dd2602cf54304af49fd6236d3539f49f614e8a"},
+    {file = "jellyfish-0.8.2-cp38-cp38-manylinux2014_x86_64.whl", hash = "sha256:288727bac0cef5817640d1d0d3655dabb9906d1f7b3e31eb1bd0b005bdf0eaf2"},
+    {file = "jellyfish-0.8.2.tar.gz", hash = "sha256:a499741401512d05bbd3556e448e960bc908eba3879fb73d450e8e91566a030b"},
 ]
 kiwisolver = [
     {file = "kiwisolver-1.2.0-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:443c2320520eda0a5b930b2725b26f6175ca4453c61f739fef7a5847bd262f74"},

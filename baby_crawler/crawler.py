@@ -2,16 +2,19 @@ from typing import Set, Tuple, Union
 
 import asyncio
 import json
-import urllib.parse
+import random
+import re
 from collections import defaultdict
+from urllib.parse import urldefrag, urljoin, urlsplit, urlunsplit
 
 import aiohttp
 import gazpacho
 import ipdb
+import jellyfish
 import networkx
-
-from .crawlerqueue import CrawlerQueue
-from .exceptions import FetchError
+from baby_crawler import crawler_config
+from baby_crawler.crawlerqueue import CrawlerQueue
+from baby_crawler.exceptions import FetchError
 
 
 class Crawler:
@@ -64,12 +67,18 @@ class Crawler:
 
         """
         self.start_url = start_url.strip("/")
-        self.root_url = urllib.parse.urlsplit(start_url)[1]
-        self.splash_address = urllib.parse.urljoin(
-            splash_address, "render.html?timeout=10&wait=0.5&url="
+        self.root_url = urlsplit(start_url)[1]
+        self.splash_address = urljoin(
+            splash_address,
+            "render.html?timeout={crawler_config.splash_timeout}&wait={crawler_config.splash_wait}&url=",
         )
 
         self.allow_subdomains = allow_subdomains
+        self._has_root_url = (
+            self._has_root_url_or_subdomain
+            if allow_subdomains
+            else self._has_root_url_only
+        )
         self.depth_by_desc = depth_by_desc
 
         self.concurrency = concurrency
@@ -84,39 +93,142 @@ class Crawler:
 
     ### Blocking functions
 
-    def _has_root_url(self, url: str) -> bool:
-        url_base = urllib.parse.urlsplit(url)[1]
-        if self.allow_subdomains:
-            if ".".join(url_base.split(".")[-2:]) == self.root_url:
-                return True
-        else:
-            if url_base == self.root_url:
-                return True
+    def _has_root_url_only(self, url: str) -> bool:
+        """Check if the given link starts with root URL.
+
+        Parameters
+        ----------
+        url : str
+            URL to be checked.
+
+        Returns
+        -------
+        bool
+            True if the link starts only with root URL, no subdomain allowed.
+
+        """
+        url_base = urlsplit(url)[1]
+        if url_base == self.root_url:
+            return True
         return False
 
-    def _is_valid_link(self, url: str) -> bool:
+    def _has_root_url_or_subdomain(self, url: str) -> bool:
+        """Check if the given link starts with root URL or its subdomain.
+
+        Parameters
+        ----------
+        url : str
+            URL to be checked.
+
+        Returns
+        -------
+        bool
+            True if the links contains root URL.
+
+        """
+        url_base = urlsplit(url)[1]
+        if ".".join(url_base.split(".")[-2:]) == self.root_url:
+            return True
+        return False
+
+    def _is_valid_link(self, parent_url: str, url: str) -> bool:
+        """Validates given URL against several rules to exclude unrelated links and some spider traps.
+
+        Parameters
+        ----------
+        parent_url : str
+            URL of the page where given link was found.
+        url : str
+            URL for checking.
+
+        Returns
+        -------
+        bool
+            True if all conditionsa are met.
+
+        """
+
+        # TODO Refactor nested IF statements
+        if len(url) <= crawler_config.max_ulr_length:
+            return False
         if (url[0] == "/" and url[:2] != "//") or (
             self._has_root_url(url) and url[:4] == "http"
         ):
+
+            if (
+                self.allow_queries
+                and jellyfish.jaro_winkler(
+                    urlsplit(parent_url).query, urlsplit(url).query
+                )
+                >= 0.85
+            ):
+                return False
+            if (
+                re.match(r"^.*\.([a-zA-Z]+)\\?", url).groups(0)[0]
+                in crawler_config.unwanded_file_exts
+            ):
+                return False
             return True
         return False
 
     def _remove_query(self, url: str) -> str:
-        split = list(urllib.parse.urlsplit(url))
-        split[3] = ""
-        return urllib.parse.urlunsplit(split)
+        """Removes query part of a URL (i.e. anythin after "?").
 
-    def _normalize_link(self, base_url: str, url: str) -> str:
+        Parameters
+        ----------
+        url : str
+            URL with or without query part.
+
+        Returns
+        -------
+        str
+            Guaranteed clean URL.
+
+        """
+        split = list(urlsplit(url))
+        split[3] = ""
+        return urlunsplit(split)
+
+    def _normalize_link(self, parent_url: str, url: str) -> str:
+        """Set relative link to absolute. Remove fragment and query if necessary.
+
+        Parameters
+        ----------
+        parent_url : str
+            URL of the page where given link was found.
+        url : str
+            URL for normalizing that passed _is_valid_link().
+
+        Returns
+        -------
+        str
+            Clean absolute URL.
+
+        """
         if url[0] == "/":
-            normalized_link = urllib.parse.urljoin(base_url, url)
+            normalized_link = urljoin(base_url, url)
         else:
             normalized_link = url
 
-        return urllib.parse.urldefrag(
-            self._remove_query(normalized_link)
-        ).url.strip("/")
+        if not self.allow_queries:
+            normalized_link = self._remove_query(normalized_link)
+
+        return urldefrag(normalized_link).url.strip("/")
 
     def get_page_data(self, html: str) -> Tuple[str, Set]:
+        """get_page_data.
+
+        Parameters
+        ----------
+        html : str
+            String of page html.
+
+        Returns
+        -------
+        Tuple[str, Set]
+            Tuple containing page title (or "" if none) and a list of validated links.
+
+        """
         soup = gazpacho.Soup(html)
 
         valid_links = set()
@@ -231,9 +343,9 @@ class Crawler:
 
             page_html = await self.fetch_page(page_link)
             # ipdb.set_trace()
-            if desc_level < self.depth_by_desc:
+            if not self.depth_by_desc or desc_level < self.depth_by_desc:
                 page_data = self.get_page_data(page_html)
-                print(f"{len(page_data[1])} links found.")
+                print(f"{len(page_data[1])} links found on {page_link}.")
 
                 for link in page_data[1]:
                     link = self._normalize_link(page_link, link)
@@ -262,9 +374,10 @@ class Crawler:
         """
         while True:
             page_id, page_link, parent_id, desc_level = await queue.get()
+            await asyncio.sleep(random.uniform(0, self.max_pause))
             if not page_link in self.crawled_links:
                 print(
-                    f"Task worker_number {worker_number} is processing {page_link}"
+                    f"Task worker_number {worker_number} is processing {page_link}. Desc_level: {desc_level}."
                 )
                 await self._process_links(
                     queue, page_id, page_link, parent_id, desc_level
