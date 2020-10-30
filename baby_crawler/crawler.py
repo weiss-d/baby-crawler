@@ -1,7 +1,8 @@
-from typing import Set, Tuple, Union
+from typing import Generator, List, Set, Tuple, Union
 
 import asyncio
 import json
+import logging
 import random
 import re
 from collections import defaultdict
@@ -70,7 +71,7 @@ class Crawler:
         self.root_url = urlsplit(start_url)[1]
         self.splash_address = urljoin(
             splash_address,
-            "render.html?timeout={crawler_config.splash_timeout}&wait={crawler_config.splash_wait}&url=",
+            f"render.html?timeout={crawler_config.splash_timeout}&wait={crawler_config.splash_wait}{crawler_config.splash_params}&url=",
         )
 
         self.allow_subdomains = allow_subdomains
@@ -79,6 +80,9 @@ class Crawler:
             if allow_subdomains
             else self._has_root_url_only
         )
+
+        self.allow_queries = allow_queries
+
         self.depth_by_desc = depth_by_desc
 
         self.concurrency = concurrency
@@ -90,6 +94,8 @@ class Crawler:
         self.crawled_links = set()
 
         self.error_count = defaultdict(int)
+
+        self.logger = logging.getLogger("asyncio")
 
     ### Blocking functions
 
@@ -131,15 +137,15 @@ class Crawler:
             return True
         return False
 
-    def _is_valid_link(self, parent_url: str, url: str) -> bool:
+    def _is_valid_link(self, link: str, parent_link: str) -> bool:
         """Validates given URL against several rules to exclude unrelated links and some spider traps.
 
         Parameters
         ----------
-        parent_url : str
-            URL of the page where given link was found.
-        url : str
+        link : str
             URL for checking.
+        parent_link : str
+            URL of the page where given link was found.
 
         Returns
         -------
@@ -147,29 +153,37 @@ class Crawler:
             True if all conditionsa are met.
 
         """
-
-        # TODO Refactor nested IF statements
-        if len(url) <= crawler_config.max_ulr_length:
+        if link[0] == "#":
             return False
-        if (url[0] == "/" and url[:2] != "//") or (
-            self._has_root_url(url) and url[:4] == "http"
-        ):
+        if link[0] == "/":
+            if link[:2] == "//":
+                return False
+        else:
+            if not self._has_root_url(link):
+                return False
+            if link[:4] != "http":
+                return False
 
-            if (
-                self.allow_queries
-                and jellyfish.jaro_winkler(
-                    urlsplit(parent_url).query, urlsplit(url).query
-                )
-                >= 0.85
-            ):
-                return False
-            if (
-                re.match(r"^.*\.([a-zA-Z]+)\\?", url).groups(0)[0]
-                in crawler_config.unwanded_file_exts
-            ):
-                return False
-            return True
-        return False
+        extension = re.findall(r"\A.*\.([a-zA-Z]+)\\?\Z", link)
+        if extension and extension[0] in crawler_config.unwanded_file_exts:
+            return False
+
+        if (
+            self.allow_queries
+            and jellyfish.jaro_winkler(
+                urlsplit(parent_url).query, urlsplit(url).query
+            )
+            >= 0.85
+        ):
+            return False
+
+        if (
+            len(self._normalize_link(link, parent_link))
+            > crawler_config.max_url_length
+        ):
+            return False
+
+        return True
 
     def _remove_query(self, url: str) -> str:
         """Removes query part of a URL (i.e. anythin after "?").
@@ -189,15 +203,15 @@ class Crawler:
         split[3] = ""
         return urlunsplit(split)
 
-    def _normalize_link(self, parent_url: str, url: str) -> str:
-        """Set relative link to absolute. Remove fragment and query if necessary.
+    def _normalize_link(self, link: str, parent_link: str) -> str:
+        """Set relative link to absolute. Remove fragment if present. Remove trailing slash.
 
         Parameters
         ----------
-        parent_url : str
-            URL of the page where given link was found.
-        url : str
+        link : str
             URL for normalizing that passed _is_valid_link().
+        parent_link : str
+            URL of the page where given link was found.
 
         Returns
         -------
@@ -205,15 +219,36 @@ class Crawler:
             Clean absolute URL.
 
         """
-        if url[0] == "/":
-            normalized_link = urljoin(base_url, url)
+        if link[0] == "/":
+            normalized_link = urljoin(parent_link, link)
         else:
-            normalized_link = url
-
-        if not self.allow_queries:
-            normalized_link = self._remove_query(normalized_link)
+            normalized_link = link
 
         return urldefrag(normalized_link).url.strip("/")
+
+    def _filter_links(
+        self, links: List[str], parent_link: str
+    ) -> Generator[str, None, None]:
+        """Filters out links that are invalid or not unique.
+
+        Parameters
+        ----------
+        links : List[str]
+            A list of links found on a page.
+
+        Returns
+        -------
+        List[str]
+            A list of links, that are valid and not yet been crawled.
+
+        """
+        for link in links:
+            if self._is_valid_link(link, parent_link):
+                link = self._normalize_link(link, parent_link)
+                if not link in self.crawled_links:
+                    if not self.allow_queries:
+                        link = self._remove_query(link)
+                    yield link
 
     def get_page_data(self, html: str) -> Tuple[str, Set]:
         """get_page_data.
@@ -231,20 +266,18 @@ class Crawler:
         """
         soup = gazpacho.Soup(html)
 
-        valid_links = set()
+        title = soup.find("title", mode="first")
+
+        links = set()
         for anchor in soup.find(
             "a", attrs={"href": ""}, partial=True, mode="all"
         ):
             if (not "rel" in anchor.attrs) or (
                 anchor.attrs["rel"] != "nofollow"
             ):
-                link = anchor.attrs["href"]
-                if self._is_valid_link(link):
-                    valid_links.add(link)
+                links.add(anchor.attrs["href"])
 
-        title = soup.find("title", mode="first")
-
-        return (title.text if title else "", valid_links)
+        return (title.text if title else "", links)
 
     def _add_graph_edge(
         self, node_id: int, node_url: str, parent_id: int
@@ -292,14 +325,16 @@ class Crawler:
 
         """
         async with aiohttp.ClientSession() as session:
-            print("Requesting from Splash:", self.splash_address + url)
+            self.logger.info(
+                ">>> Requesting Splash: " + self.splash_address + url
+            )
             try:
                 async with session.get(self.splash_address + url) as response:
                     response.raise_for_status()
                     page_data = await response.read()
                     return page_data.decode()
             except aiohttp.client_exceptions.ClientConnectorError:
-                print("Splash instance is unreachable.")
+                self.logger.error("Splash instance is unreachable.")
                 raise FetchError("Splash Unreachable", "Splash unreachable.")
             except aiohttp.ClientConnectionError as e:
                 raise FetchError(str(e.status), e.message)
@@ -308,7 +343,7 @@ class Crawler:
             except aiohttp.ClientResponseError as e:
                 raise FetchError(str(e.status), e.message)
 
-    async def _process_links(
+    async def _process_link(
         self,
         queue,
         page_id: int,
@@ -339,18 +374,19 @@ class Crawler:
         """
         try:
             self._add_graph_edge(page_id, page_link, parent_id)
-            self.crawled_links.add(page_link)
 
             page_html = await self.fetch_page(page_link)
-            # ipdb.set_trace()
-            if not self.depth_by_desc or desc_level < self.depth_by_desc:
-                page_data = self.get_page_data(page_html)
-                print(f"{len(page_data[1])} links found on {page_link}.")
+            # If any arror occures during fetch process, the link is not added to the Site Graph
+            self.crawled_links.add(page_link)
 
-                for link in page_data[1]:
-                    link = self._normalize_link(page_link, link)
-                    if not link in self.crawled_links:
-                        await queue.put((link, page_id, desc_level + 1))
+            if not self.depth_by_desc or desc_level <= self.depth_by_desc:
+                page_data = self.get_page_data(page_html)
+                self.logger.info(
+                    f"<<< {len(page_data[1])} links found on {page_link}."
+                )
+
+                for link in self._filter_links(page_data[1], page_link):
+                    await queue.put((link, page_id, desc_level + 1))
         except FetchError as e:
             self.error_count[e.error_type] += 1
             # TODO add logging for page url, or adding info to graph
@@ -375,13 +411,12 @@ class Crawler:
         while True:
             page_id, page_link, parent_id, desc_level = await queue.get()
             await asyncio.sleep(random.uniform(0, self.max_pause))
-            if not page_link in self.crawled_links:
-                print(
-                    f"Task worker_number {worker_number} is processing {page_link}. Desc_level: {desc_level}."
-                )
-                await self._process_links(
-                    queue, page_id, page_link, parent_id, desc_level
-                )
+            self.logger.info(
+                f"=> Task worker_number {worker_number} is processing {page_link}. Desc_level: {desc_level}."
+            )
+            await self._process_link(
+                queue, page_id, page_link, parent_id, desc_level
+            )
             queue.task_done()
 
     async def _run_crawler(self) -> None:
@@ -413,4 +448,4 @@ class Crawler:
 
         """
         asyncio.run(self._run_crawler())
-        print("Site map building done!")
+        self.logger.info("Site map building done!")
