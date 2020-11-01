@@ -12,12 +12,12 @@ class CrawlerQueue(Queue):
         Queue._init(self, maxsize)
         self.items_added = 0
 
-    def _put(self, item: Tuple[str, int]) -> None:
+    def _put(self, item: Tuple[str, int, int]) -> None:
         """Puts item into queue assigning unique ID to it.
 
         Parameters
         ----------
-        item : Tuple[str, int]
+        item : Tuple[str, int, int]
             Tuple containing page URL, page parent unique ID and descendance level.
 
         Returns
