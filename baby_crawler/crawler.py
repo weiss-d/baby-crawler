@@ -31,7 +31,6 @@ class Crawler:
         splash_address: str,
         allow_subdomains: bool = True,
         allow_queries: bool = False,
-        depth_by_url: Union[int, None] = None,
         depth_by_desc: Union[int, None] = None,
         concurrency: int = 5,
         max_pause: float = 10.0,
@@ -49,10 +48,6 @@ class Crawler:
             Allow indexing subdomains like "https://mail.google.com"
         allow_queries: bool
             Allow indexing URLs containing queries i.e. something after '?' sign.
-        depth_by_url : Union[int, None]
-            Limit crawling depth by number of URL path segments.
-            I.e. 3: "http://site.com/part1/part2/part3".
-            Unlimited if not specified.
         depth_by_desc : Union[int, None]
             Limit crawling depth by number of descendant pages.
             I.e. 3: "http://site.com/part1/part2/part3".
@@ -91,7 +86,8 @@ class Crawler:
         self.site_graph = networkx.DiGraph()
         self.site_graph.add_node(0, url=self.start_url)
 
-        self.crawled_links = set()
+        self.crawled_links = {self._normalize_link(start_url, "")}
+        self.added_tasks = set()
 
         self.error_count = defaultdict(int)
 
@@ -244,10 +240,10 @@ class Crawler:
         """
         for link in links:
             if self._is_valid_link(link, parent_link):
+                if not self.allow_queries:
+                    link = self._remove_query(link)
                 link = self._normalize_link(link, parent_link)
                 if not link in self.crawled_links:
-                    if not self.allow_queries:
-                        link = self._remove_query(link)
                     yield link
 
     def get_page_data(self, html: str) -> Tuple[str, Set]:
@@ -279,26 +275,24 @@ class Crawler:
 
         return (title.text if title else "", links)
 
-    def _add_graph_edge(
-        self, node_id: int, node_url: str, parent_id: int
-    ) -> None:
+    def _add_graph_edge(self, node_id: int, parent_id: int, **kwargs) -> None:
         """Add and edge to the site graph.
 
         Parameters
         ----------
         node_id : int
             Unique ID given by CrawlerQueue.
-        node_url : str
-            URL of the page represented by this node.
         parent_id : int
             Parent page ID, i.e. the page in which the node URL was found.
+        kwargs
+            Node attributes i.e. URL, Title etc.
 
         Returns
         -------
         None
 
         """
-        self.site_graph.add_node(node_id, url=node_url)
+        self.site_graph.add_node(node_id, **kwargs)
         self.site_graph.add_edge(parent_id, node_id)
 
     ### Async funtions
@@ -373,20 +367,24 @@ class Crawler:
 
         """
         try:
-            self._add_graph_edge(page_id, page_link, parent_id)
 
             page_html = await self.fetch_page(page_link)
             # If any arror occures during fetch process, the link is not added to the Site Graph
             self.crawled_links.add(page_link)
+            page_data = self.get_page_data(page_html)
+            self._add_graph_edge(
+                page_id, parent_id, url=page_link, title=page_data[0]
+            )
 
-            if not self.depth_by_desc or desc_level <= self.depth_by_desc:
-                page_data = self.get_page_data(page_html)
+            if not self.depth_by_desc or desc_level < self.depth_by_desc:
                 self.logger.info(
                     f"<<< {len(page_data[1])} links found on {page_link}."
                 )
 
                 for link in self._filter_links(page_data[1], page_link):
-                    await queue.put((link, page_id, desc_level + 1))
+                    if not link in self.added_tasks:
+                        self.added_tasks.add(link)
+                        await queue.put((link, page_id, desc_level + 1))
         except FetchError as e:
             self.error_count[e.error_type] += 1
             # TODO add logging for page url, or adding info to graph
@@ -448,4 +446,5 @@ class Crawler:
 
         """
         asyncio.run(self._run_crawler())
+        networkx.freeze(self.site_graph)
         self.logger.info("Site map building done!")
