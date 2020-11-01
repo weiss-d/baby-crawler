@@ -12,6 +12,7 @@ splash_params = ""
 max_url_length = 500
 
 unwanded_file_exts = {
+    "txt",
     "css",
     "js",
     "bmp",
