@@ -43,6 +43,7 @@ networkx_viewer = "^0.3.0"
 numpy = "^1.19.2"
 matplotlib = "^3.3.2"
 jellyfish = "^0.8.2"
+colorama = "^0.4.4"
 
 [tool.poetry.dev-dependencies]
 darglint = "^1.5.4"
