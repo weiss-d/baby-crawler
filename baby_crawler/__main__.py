@@ -1,12 +1,11 @@
 """
 CLI utility to either build and save website map or draw it using previously saved data.
 """
+# type: ignore[attr-defined]
 import datetime
 import json
 import logging
 import re
-
-# type: ignore[attr-defined]
 import time
 
 import click
@@ -32,7 +31,7 @@ def main():
     "-s",
     "--splash-address",
     type=str,
-    default="http://localhost:8051",
+    default="http://localhost:8050",
     help="Address of Splash instance. Default is http://localhost:8050.",
 )
 @click.option(
@@ -110,7 +109,10 @@ def save(
     links_found = len(cr.added_tasks)
     links_crawled = len(cr.crawled_links) - 1
 
-    echo(f"Found {links_found} unique links on {url}.", color="green")
+    echo(
+        f"Found {links_found} unique links on {url} wiht depth level {depth}.",
+        color="green",
+    )
     echo(f"Successfully crawled {links_crawled} links.", color="green")
     echo(
         "Elapsed time {}".format(datetime.timedelta(seconds=elapsed)),
@@ -119,8 +121,8 @@ def save(
 
     if cr.error_count:
         echo("Errors:", color="red")
-        for error in cr.error_count:
-            echo(f"{error.key}: {error.value}", color="red")
+        for error, ammount in cr.error_count.items():
+            echo(f"{error}: {ammount}", color="red")
 
     # Write files in case of successfull crawling
 
