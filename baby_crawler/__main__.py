@@ -138,13 +138,15 @@ def save(
 
         with open(f"{file_prefix}.txt", "w+") as txt_file:
 
+            txt_file.write(cr.site_graph.nodes[1]["url"] + "\n")
+
             def writegraph(graph, start_node, level):
                 level += 1
                 for i in graph.successors(start_node):
                     txt_file.write("\t" * level + graph.nodes[i]["url"] + "\n")
                     writegraph(graph, i, level)
 
-            writegraph(cr.site_graph, 0, -1)
+            writegraph(cr.site_graph, 1, 0)
 
             echo(f"Written found links to {file_prefix}.txt", color="green")
 
@@ -162,7 +164,6 @@ def draw(input_file):
     graph_dict = json.load(input_file)
 
     graph = nx.node_link_graph(graph_dict)
-    graph.remove_node(0)
 
     pos = hp(graph, root=1)
 

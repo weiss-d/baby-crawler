@@ -446,5 +446,6 @@ class Crawler:
 
         """
         asyncio.run(self._run_crawler())
+        self.site_graph.remove_node(0)
         networkx.freeze(self.site_graph)
         self.logger.info("Site map building done!")
