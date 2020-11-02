@@ -31,25 +31,33 @@ def checkup_html() -> str:
 </body>
 </html>
 """,
-        "result_subd": (
+        "title_nonempty_links": (
             "Test Page Title",
             {
+                "#fragment",
                 "/4.html",
+                "ftp://google.com",
                 "https://google.com/",
                 "https://google.com/1.html",
                 "https://google.com/2.html",
                 "https://google.com/3.html#test",
+                "https://google.com/picture.png",
                 "https://mail.google.com/",
+                "https://yandex.ru",
+                "mailto:admin@gmail.com",
             },
         ),
-        "result_wo_subd": (
-            "Test Page Title",
-            {
-                "/4.html",
-                "https://google.com/",
-                "https://google.com/1.html",
-                "https://google.com/2.html",
-                "https://google.com/3.html#test",
-            },
-        ),
+        "filter_result_wo_subdomains": [
+            "https://google.com/1.html",
+            "https://google.com/2.html",
+            "https://google.com/3.html",
+            "https://google.com/4.html",
+        ],
+        "filter_result_subdomains": [
+            "https://google.com/1.html",
+            "https://google.com/2.html",
+            "https://google.com/3.html",
+            "https://google.com/4.html",
+            "https://mail.google.com",
+        ],
     }
