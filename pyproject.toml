@@ -7,7 +7,7 @@ build-backend = "poetry.masonry.api"
 [tool.poetry]
 name = "baby-crawler"
 version = "0.1.0"
-description = "A primitive async website crawler."
+description = "A simple async website crawler."
 readme = "README.md"
 authors = [
   "weiss-d <wonder@simonweiss.space>"

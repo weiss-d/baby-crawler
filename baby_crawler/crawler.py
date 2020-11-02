@@ -1,3 +1,6 @@
+"""
+Module that contains main class for crawling the website.
+"""
 from typing import Generator, List, Set, Tuple, Union
 
 import asyncio
