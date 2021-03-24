@@ -13,7 +13,6 @@ from urllib.parse import urldefrag, urljoin, urlsplit, urlunsplit
 
 import aiohttp
 import gazpacho
-import ipdb
 import jellyfish
 import networkx
 from baby_crawler import crawler_config
